@@ -155,7 +155,11 @@ class Controlador:
         """Enter con una palabra a medias o mal escrita ("vamos a hac"): la
         completa/corrige antes de que salga el mensaje. True si cambió algo
         (entonces el programa se come ese Enter y lo pulsa después)."""
-        with self.lock:
+        # corre dentro del gancho de Windows: si tarda, Windows lo desconecta.
+        # Así que no espera al cerrojo y usa lo que ya calculó la barra.
+        if not self.lock.acquire(timeout=0.03):
+            return False
+        try:
             if not self.cfg["autocorregir"]:
                 return False
             a, b, sucia = self._tramo()
@@ -167,14 +171,19 @@ class Controlador:
             if (w[:1].isupper() and w[1:].islower() and not self._inicio_frase(a)
                     and self._palabra_antes(a)[0] and not self.m.conocida(w.lower())):
                 return False                       # un nombre
-            corr = self.m.reemplazo(w, self._anterior(a))
+            cache = getattr(self, "ultimo_reemplazo", None)
+            if not cache or cache[0] != (w, self._anterior(a)):
+                return False                       # la barra aún no lo calculó
+            corr = cache[1]
             if not corr:
                 return False
             final = aplicar_mayus(w, corr)
             self.salida.reemplazar(len(w), final)
             self.texto = self.texto[:a] + final + self.texto[self.cur:]
             self.cur = a + len(final)
-        return True
+            return True
+        finally:
+            self.lock.release()
 
     # ---------- eventos ----------
     def _inicio_frase(self, pos):
@@ -665,7 +674,10 @@ class Controlador:
                 return list(self.visibles)
             self.deshacer = None
             # ¿la primera es la que pondrá el espacio? (solo al final de la palabra)
-            self.resaltar = bool(buf and b == self.cur and self.cfg["autocorregir"]
-                                 and len(buf) >= self.cfg["min_letras_autocorregir"]
-                                 and self.m.reemplazo(buf, anterior))
+            self.resaltar = False
+            if (buf and b == self.cur and self.cfg["autocorregir"]
+                    and len(buf) >= self.cfg["min_letras_autocorregir"]):
+                r = self.m.reemplazo(buf, anterior)
+                self.ultimo_reemplazo = ((buf, anterior), r)   # para el Enter
+                self.resaltar = bool(r)
             return list(self.visibles)
