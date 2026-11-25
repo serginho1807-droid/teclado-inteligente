@@ -145,14 +145,11 @@ class Controlador:
         return self.elegir(0)
 
     def ver_opciones_correccion(self):
-        """Retroceso justo después de corregir: no borra nada, enseña opciones.
-        Devuelve False si no hay corrección reciente (el Retroceso borra normal)."""
-        with self.lock:
-            if not self.ultima_corr or self.opciones_corr:
-                return False
-            self.opciones_corr = True
-        self.al_cambiar()
-        return True
+        """Antes el primer Retroceso tras corregir no borraba (solo enseñaba
+        opciones) y había que pulsarlo dos veces. Ahora el Retroceso borra el
+        espacio normal y el cursor queda al final de la palabra, con las opciones
+        (lo que escribiste primero) en la barra. Siempre False: borra normal."""
+        return False
 
     # ---------- eventos ----------
     def _inicio_frase(self, pos):
@@ -481,10 +478,12 @@ class Controlador:
             # queda en la barra por si lo quieres recuperar
             self.espacio_auto = None
             if self.ultima_corr:                   # volviste atrás justo tras corregir
+                self.deshacer_ini = self.cur - 1 - len(self.ultima_corr[1])
                 self.rechazadas[self.ultima_corr[0].lower()] = self.ultima_corr[1]
                 if len(self.rechazadas) > 30:
                     self.rechazadas.pop(next(iter(self.rechazadas)))
-            self.deshacer, self.ultima_corr = self.ultima_corr, None
+            if self.ultima_corr:     # sigue de opción mientras borras la corregida
+                self.deshacer, self.ultima_corr = self.ultima_corr, None
             if self.cur > 0:
                 self.texto = self.texto[:self.cur - 1] + self.texto[self.cur:]
                 self.cur -= 1
@@ -615,6 +614,16 @@ class Controlador:
             anterior = self._anterior(a)
             if self.deshacer and b == self.cur and buf == self.deshacer[1]:
                 self.visibles = self._opciones_de(*self.deshacer, anterior)
+                return list(self.visibles)
+            if (self.deshacer and b == self.cur
+                    and a == getattr(self, "deshacer_ini", -1)
+                    and any(x.lower().startswith(buf.lower()) for x in self.deshacer)):
+                # borraste (parte de) la corregida: lo que tú escribiste sigue de opción
+                original = self.deshacer[0]
+                n = self.cfg["num_sugerencias"]
+                otras = self.m.sugerencias(buf, anterior, n + 1)
+                self.visibles = ([original] + [v for v in otras
+                                               if v.lower() != original.lower()])[:n]
                 return list(self.visibles)
             self.visibles = self.m.sugerencias(buf, anterior, self.cfg["num_sugerencias"])
             self.visibles_para = (self.texto, self.cur)
