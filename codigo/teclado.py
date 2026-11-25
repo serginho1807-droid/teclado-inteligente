@@ -108,11 +108,19 @@ class Salida:
         threading.Thread(target=self._bucle, daemon=True).start()
 
     def reemplazar(self, n_borrar, texto, n_suprimir=0):
-        self.cola.put((n_borrar, texto, n_suprimir))
+        self.cola.put((n_borrar, texto, n_suprimir, None))
+
+    def tecla(self, vk):
+        """Pulsa una tecla (p. ej. Enter) después de lo que haya en la cola."""
+        self.cola.put((0, "", 0, vk))
 
     def _bucle(self):
         while True:
-            n, texto, supr = self.cola.get()
+            n, texto, supr, vk_extra = self.cola.get()
+            if vk_extra:
+                arr = (INPUT * 2)(_ki(vk_extra), _ki(vk_extra, 0, 2))
+                user32.SendInput(2, arr, ctypes.sizeof(INPUT))
+                continue
             ev = []
             for vk in (0xA2, 0xA3, 0xA4, 0xA5):          # soltar Ctrl/Alt si siguen
                 if user32.GetAsyncKeyState(vk) & 0x8000:
@@ -535,6 +543,11 @@ class App:
             return False
         if vk == 0x20 and not ctrl and not alt and not shift and self.ctl.espacio_predice():
             self.oyente.suppress_event()         # espacio tras espacio: tu siguiente palabra
+        if vk == 0x0D and not ctrl and not alt and self.ctl.antes_de_enter():
+            # "vamos a hac" + Enter: primero completar/corregir, luego enviar
+            self.ctl.salida.tecla(0x0D)
+            self.ctl.fin_palabra("\n")
+            self.oyente.suppress_event()         # (lanza excepción: va al final)
         if vk == VK_BACK and not ctrl and not alt and self.ctl.ver_opciones_correccion():
             self.oyente.suppress_event()         # tras corregir: no borra, da opciones
         indice = None
