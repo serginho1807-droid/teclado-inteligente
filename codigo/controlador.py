@@ -248,6 +248,9 @@ class Controlador:
                     # otra vez igual: es la que quieres, no tocarla nunca más
                     self.m.proteger(w)
                     self.rechazadas.pop(w.lower())
+                elif (w[:1].isupper() and w[1:].islower() and not self._inicio_frase(a)
+                      and self._palabra_antes(a)[0] and not self.m.conocida(w.lower())):
+                    pass       # con mayúscula en mitad de la frase y desconocida: un nombre
                 elif (self.cfg["autocorregir"] and sep not in NO_CORREGIR_CON
                         and len(w) >= self.cfg["min_letras_autocorregir"]):
                     corr = self.m.reemplazo(w, anterior)
@@ -258,6 +261,9 @@ class Controlador:
                         self.cur = a + len(final) + 1
                         self.ultima_corr = (w, final)
                 self.m.aprender(final, anterior)
+                if (final[:1].isupper() and final[1:].islower() and len(final) > 2
+                        and not self._inicio_frase(a)):
+                    self.m.propio_visto(final)     # nombre escrito con mayúscula: aprenderlo
                 if self.cfg.get("tildes_contexto", True) and sep != "\n":
                     if not self._espacio_movido(a, w, final):
                         self._tildes_contexto(a, final)
@@ -277,6 +283,22 @@ class Controlador:
         self.al_cambiar()
 
     # ---------- tildes según el contexto, corrigiendo hacia atrás ----------
+    def _frase_inglesa(self):
+        """¿La frase que estás escribiendo va en inglés? (la mitad de sus palabras
+        o más son inglesas y no españolas)"""
+        import re
+        fin = self.cur
+        while fin > 0 and self.texto[fin - 1] in ".!?…,;: ":
+            fin -= 1                                 # saltar el signo con el que cierras
+        i = fin
+        while i > 0 and self.texto[i - 1] not in ".!?\n¿¡" and fin - i < 300:
+            i -= 1
+        palabras = re.findall(r"[^\W\d_]+", self.texto[i:fin])
+        if len(palabras) < 2:
+            return False
+        en = sum(1 for p in palabras if self.m.es_ingles(p))
+        return en >= 2 and en * 2 >= len(palabras)
+
     def _reescribir(self, ini, nuevo):
         """Cambia lo que hay entre ini y el cursor por `nuevo`."""
         n = self.cur - ini
@@ -290,6 +312,11 @@ class Controlador:
         """"que tal" -> "qué tal": al terminar una palabra, mira si la anterior
         llevaba tilde en este contexto y la corrige aunque ya la hayas pasado."""
         p1, j = self._palabra_antes(a)
+        if self._frase_inglesa():
+            # frase en inglés: de las reglas solo "i" -> "I"
+            if p1 == "i" and self.texto[j:j + 1] == "i" and self.texto[j + 1:a] == " ":
+                self._reescribir(j, "I" + self.texto[j + 1:self.cur])
+            return
         if not p1:
             return
         fin1 = j + len(p1)
@@ -368,6 +395,8 @@ class Controlador:
     def _signo_apertura(self, sep):
         """En español la pregunta y la exclamación se abren: "¿" "¡".
         "Será que sí?" -> "¿Será que sí?", "Hola, cómo estás?" -> "Hola, ¿cómo estás?"."""
+        if self._frase_inglesa():
+            return                                   # frase en inglés: reglas del español no
         abre = "¿" if sep == "?" else "¡"
         fin = self.cur - 1
         i = fin
@@ -393,6 +422,8 @@ class Controlador:
     def _revisar_gramatica(self, cerrada):
         """Reglas generales de la RAE (tilde diacrítica) sobre la frase actual:
         "Ella esta trabajando" -> "Ella está trabajando", "El me dijo" -> "Él me dijo"."""
+        if self._frase_inglesa():
+            return                                   # frase en inglés: reglas del español no
         i = self.cur
         while i > 0 and self.texto[i - 1] not in ".!?\n¿¡" and self.cur - i < 300:
             i -= 1
@@ -415,6 +446,8 @@ class Controlador:
     def _tildes_pregunta(self):
         """Al cerrar con "?": "como estas?" -> "cómo estás?", "que hora es?" ->
         "qué hora es?". Busca el principio de la pregunta."""
+        if self._frase_inglesa():
+            return                                   # frase en inglés: reglas del español no
         t, fin = self.texto, self.cur - 1            # fin: posición del "?"
         i = fin
         while i > 0 and t[i - 1] not in ".!?\n¿¡":
