@@ -448,6 +448,11 @@ class Controlador:
             pal = re.match(r"[^\W\d_]+", resto)
             if pal and (pal.group().lower() in ACENTUADOS_TODOS):
                 k = i + m.end()
+        # "bueno pero entonces cuándo nos vemos" -> "...entonces ¿cuándo nos vemos?"
+        palabras = list(re.finditer(r"[^\W\d_]+", self.texto[k:fin]))
+        donde = self.m.inicio_pregunta([p.group() for p in palabras[:9]])
+        if donde and donde[0] > 0:
+            k += palabras[donde[0]].start()
         self._reescribir(k, abre + self.texto[k:self.cur])
 
     def _revisar_gramatica(self, cerrada):
@@ -486,7 +491,7 @@ class Controlador:
         if i == 0 and not self.inicio_campo:
             return                                   # no sabemos dónde empieza la frase
         import re
-        trozos = list(re.finditer(r"[^\W\d_]+", t[i:fin]))[:3]
+        trozos = list(re.finditer(r"[^\W\d_]+", t[i:fin]))[:9]
         if not trozos:
             return
         nuevas = self.m.tilde_pregunta([m.group() for m in trozos])
