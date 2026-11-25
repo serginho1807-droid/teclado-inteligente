@@ -30,6 +30,7 @@ class Controlador:
         self.opciones_corr = False    # barra mostrando opciones de la última corrección
         self.rechazadas = {}          # correcciones a las que volviste para cambiarlas
         self.visibles = []
+        self.emoji = None             # emoji que muestra la barra al lado de las palabras
         self.resaltar = False
         self.pausado = False
         self.contrasena = False       # el cuadro activo es de contraseña
@@ -91,6 +92,45 @@ class Controlador:
         res = [original] + [v for v in otras
                             if v.lower() not in (original.lower(), corregida.lower())]
         return res[:self.cfg["num_sugerencias"]]
+
+    def _palabra_para_emoji(self):
+        """La palabra que estás escribiendo, o la que acabas de terminar."""
+        a, b, sucia = self._tramo()
+        if sucia:
+            return None, a, b
+        if a < b and b == self.cur:
+            return self.texto[a:b], a, b
+        if a == b and self.cur > 0 and self.texto[self.cur - 1] == " ":
+            p, j = self._palabra_antes(self.cur)
+            if p and self.texto[j + len(p):self.cur] == " ":
+                return self.texto[j:j + len(p)], j, j + len(p)
+        return None, a, b
+
+    def elegir_emoji(self):
+        """Escribe el emoji de la barra detrás de la palabra: "pizza 🍕 "."""
+        with self.lock:
+            e = self.emoji
+            if not e:
+                return False
+            palabra, a, b = self._palabra_para_emoji()
+            if not palabra:
+                return False
+            if getattr(self, "emoji_completa", False) and self.visibles:
+                # "piz" + emoji -> completar con la palabra predicha y luego el emoji
+                self._elegir_normal(0)
+                palabra, a, b = self._palabra_para_emoji()
+            elif b == self.cur:                     # aún escribiendo la palabra: cerrarla
+                self.salida.reemplazar(0, " ")
+                self.fin_palabra(" ")
+                palabra, a, b = self._palabra_para_emoji()
+            self.salida.reemplazar(0, e + " ")
+            self._insertar(e + " ")
+            self.espacio_auto = self.cur
+            if palabra:
+                self.m.aprender_emoji(palabra, e)
+            self.emoji = None
+        self.al_cambiar()
+        return True
 
     def espacio_predice(self):
         """Espacio justo después de un espacio: escribe la siguiente palabra que
@@ -513,6 +553,20 @@ class Controlador:
             return self.texto[a:b], sucia
 
     def calcular(self):
+        with self.lock:
+            self.emoji = None
+            self.emoji_completa = False
+            palabras = self._calcular_palabras()
+            if self.cfg.get("emojis", True) and not (self.pausado or self.contrasena):
+                palabra, a, b = self._palabra_para_emoji()
+                self.emoji = self.m.emoji_para(palabra) if palabra else None
+                if not self.emoji and palabra and b == self.cur and self.visibles:
+                    # "piz" -> la palabra que predice ("pizza") tiene emoji 🍕
+                    self.emoji = self.m.emoji_para(self.visibles[0])
+                    self.emoji_completa = bool(self.emoji)
+            return palabras
+
+    def _calcular_palabras(self):
         with self.lock:
             self.resaltar = False
             a, b, sucia = self._tramo()
