@@ -43,6 +43,7 @@ CONFIG_BASE = {
     "completar_con_espacio": True,
     "teclas_F": True,
     "emojis": True,               # emoji al lado de las palabras (como el iPhone)
+    "actualizaciones": "preguntar",   # "preguntar", "automatico" o "nunca"
     "posicion_barra": None,
     "opacidad": 0.6,           # 1 = sólida, 0.4 = muy transparente
     "mayuscula_inicial": True,
@@ -286,7 +287,9 @@ class App:
                 msg = self.ui.get_nowait()
                 if msg == "salir":
                     return self.salir()
-                if isinstance(msg, tuple):
+                if isinstance(msg, tuple) and msg[0] == "preguntar":
+                    self.ventana_actualizar(*msg[1:])
+                elif isinstance(msg, tuple):
                     aviso = msg[1]
                 else:
                     hay = True
@@ -388,14 +391,78 @@ class App:
         self._guardar_posicion()
 
     def _guardar_posicion(self):
+        self._guardar_ajuste("posicion_barra", self.cfg["posicion_barra"])
+
+    def _guardar_ajuste(self, clave, valor):
+        self.cfg[clave] = valor
         try:
             with open(CONFIG_RUTA, encoding="utf-8") as f:
                 guardada = json.load(f)
         except (OSError, ValueError):
             guardada = {}
-        guardada["posicion_barra"] = self.cfg["posicion_barra"]
+        guardada[clave] = valor
         with open(CONFIG_RUTA, "w", encoding="utf-8") as f:
             json.dump(guardada, f, ensure_ascii=False, indent=2)
+
+    def ventana_actualizar(self, version_nueva, cambios, aceptar):
+        """Hay una versión nueva: enseñar qué cambia y que decidas tú."""
+        if getattr(self, "_ventana_act", None):
+            return
+        v = self._ventana_act = tk.Toplevel(self.root)
+        v.title("Teclado Inteligente: actualización")
+        v.attributes("-topmost", True)
+        v.resizable(False, False)
+        v.configure(bg="white", padx=18, pady=14)
+        tk.Label(v, text=f"Hay una versión nueva del teclado ({version_nueva})",
+                 font=("Segoe UI", 12, "bold"), bg="white").pack(anchor="w")
+        tk.Label(v, text="Qué cambia:" if cambios else "No trae lista de cambios.",
+                 font=("Segoe UI", 10), bg="white", fg="#555").pack(anchor="w", pady=(8, 2))
+        for c in cambios[:15]:
+            tk.Label(v, text="• " + c, font=("Segoe UI", 10), bg="white", justify="left",
+                     wraplength=440).pack(anchor="w")
+        modo = tk.StringVar(value=self.cfg.get("actualizaciones", "preguntar"))
+        caja = tk.Frame(v, bg="white")
+        caja.pack(anchor="w", pady=(12, 4))
+        for valor, texto in (("preguntar", "Avisarme siempre antes de actualizar"),
+                             ("automatico", "Actualizar solo, sin preguntar"),
+                             ("nunca", "No buscar actualizaciones")):
+            tk.Radiobutton(caja, text=texto, value=valor, variable=modo, bg="white",
+                           font=("Segoe UI", 9)).pack(anchor="w")
+        botones = tk.Frame(v, bg="white")
+        botones.pack(anchor="e", pady=(10, 0))
+
+        def cerrar():
+            self._guardar_ajuste("actualizaciones", modo.get())
+            self._ventana_act = None
+            v.destroy()
+
+        def actualizar():
+            cerrar()
+            self.reiniciar_ya = True
+            self.aviso("⬇ Descargando la actualización…")
+            threading.Thread(target=lambda: self._instalar(aceptar), daemon=True).start()
+
+        def luego():
+            if getattr(self, "act", None):
+                self.act.mas_tarde()
+            cerrar()
+
+        tk.Button(botones, text="Ahora no", command=luego, width=12).pack(side="right", padx=4)
+        tk.Button(botones, text="Actualizar", command=actualizar, width=12,
+                  bg="#2b7a3d", fg="white").pack(side="right")
+        v.protocol("WM_DELETE_WINDOW", luego)
+        v.update_idletasks()
+        x = (v.winfo_screenwidth() - v.winfo_reqwidth()) // 2
+        y = (v.winfo_screenheight() - v.winfo_reqheight()) // 3
+        v.geometry(f"+{x}+{y}")
+
+    def _instalar(self, aceptar):
+        try:
+            if not aceptar():
+                self.ui.put(("aviso", "Ya tenías la última versión"))
+        except Exception:
+            self.reiniciar_ya = False
+            self.ui.put(("aviso", "No se pudo descargar; se intentará más tarde"))
 
     def aviso(self, texto):
         self.mostrar([], aviso=texto)
@@ -529,9 +596,13 @@ class App:
             try:
                 import version
                 from actualizador import Actualizador, version_instalada
-                Actualizador(version_instalada(version.CODIGO), version.PROGRAMA,
-                             al_actualizar=self._actualizado,
-                             al_avisar=lambda t: self.ui.put(("aviso", t))).iniciar()
+                self.act = Actualizador(
+                    version_instalada(version.CODIGO), version.PROGRAMA,
+                    al_actualizar=self._actualizado,
+                    al_avisar=lambda t: self.ui.put(("aviso", t)),
+                    al_preguntar=lambda v, c, ok: self.ui.put(("preguntar", v, c, ok)),
+                    modo=lambda: self.cfg.get("actualizaciones", "preguntar"))
+                self.act.iniciar()
             except Exception:
                 pass
         self.root.after(10000, self._quizas_reiniciar)
@@ -544,7 +615,8 @@ class App:
     def _quizas_reiniciar(self):
         """Aplica la actualización cuando llevas un minuto sin escribir."""
         v = getattr(self, "pendiente_reinicio", None)
-        if v and time.time() - self.ultima_tecla > 60 and not self.rect_barra:
+        if v and (getattr(self, "reiniciar_ya", False)
+                  or time.time() - self.ultima_tecla > 60 and not self.rect_barra):
             with self.ctl.lock:
                 self.motor.guardar()
             import subprocess
