@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "commit": "fe1e15ebdead9bc79e928387f58b4663281c350b",
+  "archivos": {
+    "teclado.py": "d29be7d555c29e22f85d6e58623b69ef00ac6660e39e6e2f563dffb106dd6411",
+    "motor.py": "4a7df5b8f8def25efcfbdd5f0247ba8dc8e2ee42d40a50c4bcaae43559a2eaf0",
+    "controlador.py": "3f341805bb4635b4007d8b74a6c8d4eda146b14d4599f48cdd996e4a7c7e0d3c",
+    "gramatica.py": "2ef5e7c55bbbe9d6bd8ecc43f62b5edb44457572a045adcff5c12e25ff9b220a",
+    "uia.py": "51dbe875092d2a26a73d420aa4d9076569d13add18e5d936890bf18fa5974bbe",
+    "ortografia_windows.py": "e739a70e910cfbfc0d02dfbd37b32511da9b3fe175304466da4299a6b6639acc",
+    "actualizador.py": "a6c2cfb94563b2ccd640b9e6f2fc81f3c92d09d723e80f3c58bb43a25c0f3249",
+    "version.py": "c8cb63fdbd6dc6dd1080e96429ccd14b195bb3bb846408a8c49d08ec95168475"
+  },
+  "min_programa": "1.0",
+  "instalador": "https://github.com/serginho1807-droid/teclado-inteligente/releases/latest"
+}
