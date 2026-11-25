@@ -66,6 +66,13 @@ INTERROGATIVOS = {"que": "qué", "como": "cómo", "donde": "dónde", "adonde": "
                   "cuantos": "cuántos", "cuantas": "cuántas", "quien": "quién",
                   "quienes": "quiénes", "cual": "cuál", "cuales": "cuáles"}
 ACENTUADOS = set(INTERROGATIVOS.values())
+# lo que puede ir delante de la pregunta: "bueno pero entonces ¿cuándo...?"
+ENTRADA_PREGUNTA = {"bueno", "pero", "entonces", "oye", "oiga", "mira", "pues", "ok",
+                    "okey", "vale", "hola", "ah", "ay", "ya", "bien", "listo", "dale",
+                    "perfecto", "claro", "igual", "sea", "osea", "y", "e", "o", "u", "ni",
+                    "aja", "ajá", "eh", "uy", "jaja", "jajaja", "bueeeno", "amor", "oigan"}
+PREPOSICIONES_PREGUNTA = {"a", "de", "en", "con", "para", "por", "desde", "hasta",
+                          "hacia", "sobre", "sin", "entre", "según"}
 # verbo que suele ir detrás y también lleva tilde: "cómo estás"
 VERBO_TILDE = {"estas": "estás", "esta": "está", "estan": "están", "estais": "estáis"}
 # siempre son pregunta, estén donde estén
@@ -556,16 +563,37 @@ class Motor:
         lleva tilde ("Como estas?" -> "Cómo estás?"). Recibe las palabras de la
         frase y devuelve la lista corregida."""
         res = [p.lower() for p in palabras]
-        if not res:
-            return res
-        i = 0
-        if res[0] == "por" and len(res) > 1 and res[1] == "que":
-            i = 1                                         # "por que" -> "por qué"
-        if res[i] in INTERROGATIVOS:
-            res[i] = INTERROGATIVOS[res[i]]
-            if i + 1 < len(res) and res[i + 1] in VERBO_TILDE:
-                res[i + 1] = VERBO_TILDE[res[i + 1]]
+        donde = self.inicio_pregunta(res)
+        if donde:
+            i = donde[1]
+            if res[i] in INTERROGATIVOS:
+                res[i] = INTERROGATIVOS[res[i]]
+                if i + 1 < len(res) and res[i + 1] in VERBO_TILDE:
+                    res[i + 1] = VERBO_TILDE[res[i + 1]]
         return res
+
+    @staticmethod
+    def inicio_pregunta(palabras):
+        """¿Dónde empieza la pregunta? Salta lo de entrada ("bueno pero entonces
+        cuando nos vemos" -> en "cuando"; "a que hora" -> en "a").
+        Devuelve (palabra donde va el "¿", palabra interrogativa) o None."""
+        res = [p.lower() for p in palabras]
+        i = 0
+        while i < len(res) and i < 6 and res[i] in ENTRADA_PREGUNTA:
+            i += 1
+        if i >= len(res):
+            return None
+        es_int = lambda w: w in INTERROGATIVOS or w in INTERROGATIVOS.values()
+        if res[i] in PREPOSICIONES_PREGUNTA and i + 1 < len(res) and es_int(res[i + 1]):
+            q = i + 1                                     # "a que hora", "por que"
+        elif es_int(res[i]):
+            q = i
+        else:
+            return None
+        s = i
+        while s > 0 and res[s - 1] in ("y", "e", "o", "u", "ni"):
+            s -= 1                                        # "¿Y dónde...?"
+        return s, q
 
     def cambiar_pareja(self, viejo, nuevo, siguiente):
         """Tras poner la tilde, que lo aprendido diga "qué tal" y no "que tal"."""
