@@ -93,28 +93,30 @@ DIGITO_CERCA = {"1": "qa", "2": "wqs", "3": "ewd", "4": "rea", "5": "tr", "6": "
 PALABRA_RE =re.compile(r"[^\W\d_]+", re.UNICODE)
 
 
-_EMOJIS = None
+_DATOS = {}
+
+
+def _cargar_datos(modulo, variable):
+    """Los diccionarios (emojis, inglés, nombres) están en archivos .py al lado
+    de este (también cuando llegan con una actualización automática)."""
+    if modulo not in _DATOS:
+        try:
+            _DATOS[modulo] = getattr(__import__(modulo), variable)
+        except ImportError:
+            import importlib.util
+            ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), modulo + ".py")
+            try:
+                spec = importlib.util.spec_from_file_location(modulo, ruta)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                _DATOS[modulo] = getattr(mod, variable)
+            except Exception:
+                _DATOS[modulo] = {}
+    return _DATOS[modulo]
 
 
 def _cargar_emojis():
-    """El diccionario de emojis está en emojis_datos.py, al lado de este archivo
-    (también cuando llega con una actualización automática)."""
-    global _EMOJIS
-    if _EMOJIS is None:
-        try:
-            from emojis_datos import EMOJIS
-            _EMOJIS = EMOJIS
-        except ImportError:
-            import importlib.util
-            ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "emojis_datos.py")
-            try:
-                spec = importlib.util.spec_from_file_location("emojis_datos", ruta)
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-                _EMOJIS = mod.EMOJIS
-            except Exception:
-                _EMOJIS = {}
-    return _EMOJIS
+    return _cargar_datos("emojis_datos", "EMOJIS")
 
 
 def sin_tildes(s):
@@ -179,6 +181,9 @@ class Motor:
         self.bigramas = {}     # palabra anterior -> {siguiente: veces}
         self.trigramas = {}    # "dos anteriores" -> {siguiente: veces}
         self.emojis_usuario = {}  # palabra -> {emoji: veces que lo elegiste}
+        self.propios = {}         # nombre en minúscula -> {"forma": "Keyla", "veces": n}
+        self.propios_cache = {}
+        self._indice_en = None
         self.protegidas = set()  # palabras que el usuario no quiere que se corrijan
         self.cambios = False
         self.cargar()
@@ -192,6 +197,7 @@ class Motor:
             self.bigramas = d.get("bigramas", {})
             self.trigramas = d.get("trigramas", {})
             self.emojis_usuario = d.get("emojis", {})
+            self.propios = d.get("propios", {})
             self.protegidas = set(d.get("protegidas", []))
         except (OSError, ValueError):
             pass
@@ -204,6 +210,7 @@ class Motor:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"palabras": self.usuario, "bigramas": self.bigramas,
                        "trigramas": self.trigramas, "emojis": self.emojis_usuario,
+                       "propios": self.propios,
                        "protegidas": sorted(self.protegidas)}, f, ensure_ascii=False)
         os.replace(tmp, self.ruta)
         self.cambios = False
@@ -374,6 +381,24 @@ class Motor:
         w = palabra.lower()
         if len(w) < 2:
             return None
+        if palabra.islower():                     # nombres propios con mayúscula
+            nombre = self.nombre_propio(w)
+            if nombre:
+                return nombre
+        en_ctx = self.contexto_ingles(anterior)
+        if en_ctx:
+            # frase en inglés: palabras inglesas se dejan, "i" -> "I", errores en inglés
+            if w == "i":
+                return "I"
+            if self.frec_ingles(w) >= 1000 or self.conocida(w):
+                return None
+            corr = self.correccion_ingles(w)
+            if corr:
+                return corr
+            comp = self.completar_ingles(w, 1) if self.completar_con_espacio else []
+            return comp[0] if comp and len(w) >= 3 else None
+        if self.es_ingles(w) and not self.conocida(w) and w not in self.por_base:
+            return None                           # palabra inglesa suelta: no "corregirla"
         if (palabra != w and self.frec.get(w, 0) >= self.min_frec and w not in self.por_base
                 and self.win and self.win.correcta(palabra)):
             return None                           # nombre propio escrito así: "Claude"
@@ -512,6 +537,8 @@ class Motor:
             con = self.bigramas.get(v, {}).get(b, 0)
             if con >= 2 and con > 2 * self.bigramas.get(a, {}).get(b, 0):
                 return v, b
+        if a == "i" and self.es_ingles(b):              # "i think" -> "I think"
+            return "I", b
         if a in ACENTUADOS and b in VERBO_TILDE:        # "cómo estas" -> "cómo estás"
             return a, VERBO_TILDE[b]
         # concordancia: "eses estilo" -> "ese estilo", "estes dia" -> "este dia"
@@ -550,6 +577,78 @@ class Motor:
         bueno[s] = bueno.get(s, 0) + 1
         self.usuario[nuevo.lower()] = self.usuario.get(nuevo.lower(), 0) + 1
         self.cambios = True
+
+    # ---------- nombres propios: siempre con mayúscula ----------
+    def nombre_propio(self, w):
+        """"juan" -> "Juan", "bogota" -> "Bogotá", "whatsapp" -> "WhatsApp".
+        None si no es un nombre (o si es también palabra común: rosa, paz, luz)."""
+        if len(w) < 3 or w in self.protegidas:
+            return None
+        if w in self.propios_cache:
+            return self.propios_cache[w]
+        forma = None
+        tuyo = self.propios.get(w)
+        if tuyo and tuyo.get("veces", 0) >= 2:
+            forma = tuyo["forma"]                       # nombres que tú escribes así
+        if not forma:
+            forma = _cargar_datos("nombres_datos", "NOMBRES").get(w)
+        if not forma and self.win and not self.win.correcta(w):
+            # Windows solo la acepta con mayúscula y la propone así
+            for s in self.win.sugerir(w, 3):
+                if s[:1].isupper() and " " not in s and sin_tildes(s.lower()) == sin_tildes(w):
+                    forma = s
+                    break
+        if len(self.propios_cache) > 5000:
+            self.propios_cache.clear()
+        self.propios_cache[w] = forma
+        return forma
+
+    def propio_visto(self, palabra):
+        """La escribiste con mayúscula en mitad de una frase: es un nombre tuyo."""
+        w = palabra.lower()
+        d = self.propios.setdefault(w, {"forma": palabra, "veces": 0})
+        d["forma"] = palabra
+        d["veces"] += 1
+        self.propios_cache.pop(w, None)
+        self.cambios = True
+
+    # ---------- inglés ----------
+    def frec_ingles(self, w):
+        return _cargar_datos("ingles_datos", "INGLES").get(w.lower(), 0)
+
+    def es_ingles(self, w):
+        """Palabra inglesa corriente que no es (o casi no es) española: "the", "house"."""
+        w = w.lower()
+        fe = self.frec_ingles(w)
+        return fe >= 2000 and fe > 3 * self.frec.get(w, 0)
+
+    def contexto_ingles(self, anterior):
+        return bool(anterior) and any(self.es_ingles(p) for p in anterior.split()[-2:])
+
+    def completar_ingles(self, prefijo, n=3):
+        en = _cargar_datos("ingles_datos", "INGLES")
+        if not en:
+            return []
+        if self._indice_en is None:
+            self._indice_en = sorted(en)
+        p = prefijo.lower()
+        i = bisect.bisect_left(self._indice_en, p)
+        j = bisect.bisect_left(self._indice_en, p + "￿")
+        cand = [w for w in self._indice_en[i:j] if len(w) > len(p)]
+        return sorted(cand, key=lambda w: -(en[w] * (1 + 3 * self.usuario.get(w, 0))))[:n]
+
+    def correccion_ingles(self, w):
+        en = _cargar_datos("ingles_datos", "INGLES")
+        if not en or w in en:
+            return None
+        letras = "abcdefghijklmnopqrstuvwxyz"
+        partes = [(w[:i], w[i:]) for i in range(len(w) + 1)]
+        ediciones = ({a + b[1:] for a, b in partes if b}
+                     | {a + b[1] + b[0] + b[2:] for a, b in partes if len(b) > 1}
+                     | {a + c + b[1:] for a, b in partes if b for c in letras}
+                     | {a + c + b for a, b in partes for c in letras})
+        cand = [c for c in ediciones if en.get(c, 0) >= 3000]
+        return max(cand, key=en.get) if cand else None
 
     # ---------- emojis (como el iPhone: el emoji al lado de la palabra) ----------
     def emoji_para(self, palabra):
@@ -605,10 +704,22 @@ class Motor:
     def sugerencias(self, escrito, anterior=None, n=3):
         """Lista para la barra: corrección primero, luego completados."""
         if not escrito:
-            return self.siguiente(anterior, n)
+            return [self._forma(w) for w in self.siguiente(anterior, n)]
         res = []
         lw = escrito.lower()
+        if self.contexto_ingles(anterior):        # frase en inglés: sugerencias en inglés
+            primero = self.reemplazo(escrito, anterior)
+            if primero:
+                res.append(primero)
+            for w in self.completar_ingles(escrito, n + 1):
+                if w not in res:
+                    res.append(w)
+            return [aplicar_mayus(escrito, w) for w in res[:n]]
         completados = self.completar(escrito, anterior, n + 1)
+        if len(completados) < n and len(escrito) >= 3:
+            # nada (o poco) en español: palabras inglesas que empiezan así
+            completados += [w for w in self.completar_ingles(escrito, n)
+                            if self.es_ingles(w) and w not in completados][:n - len(completados)]
         # primero lo que hará el espacio, para que se vea antes de pulsarlo
         primero = self.reemplazo(escrito, anterior)
         if primero:
@@ -643,4 +754,10 @@ class Motor:
                     break
                 if w != escrito.lower() and w not in res:
                     res.append(w)
-        return [aplicar_mayus(escrito, w) for w in res[:n]]
+        return [aplicar_mayus(escrito, self._forma(w)) for w in res[:n]]
+
+    def _forma(self, w):
+        """Cómo se escribe la palabra: los nombres propios con su mayúscula."""
+        if w.islower():
+            return self.nombre_propio(w) or w
+        return w
