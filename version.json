@@ -1,19 +1,28 @@
 {
-  "version": "1.2",
-  "commit": "50ad6880c1968ebf2c51bedd9940191ad1dc57e2",
+  "version": "1.3",
+  "commit": "5d36968ee8c576840cdc9a3f69f94876c3ffb0f1",
   "archivos": {
     "teclado.py": "0673855077913849226ba6ec504ce2bacf6d97de41e686b9619e9e0540245948",
-    "motor.py": "bf534714a533426791c4d7feb5156163fc4ca1a5f39cefa6ed848dd4059851e4",
-    "controlador.py": "77dcabe6e8b21e7afa67b05cdb078a8181acabe70cad5df7818c822c2f411e70",
+    "motor.py": "71415a731c71b6c34895c78011038104bdf0a4b3f00df2b003304372cbf60d8e",
+    "controlador.py": "4c7c689e7464caf6e8e10773dbacd0048395144d7ba341f7bdf91071e5e5fc47",
     "gramatica.py": "3e02b367d07b843d37ce53efe082f05e4ee18509c089693afa70e025100dc4ff",
     "uia.py": "51dbe875092d2a26a73d420aa4d9076569d13add18e5d936890bf18fa5974bbe",
     "ortografia_windows.py": "e739a70e910cfbfc0d02dfbd37b32511da9b3fe175304466da4299a6b6639acc",
     "actualizador.py": "eadf148e043502a22cda161113f3f164e6035b54abfdc3d4c3dc1245471511a3",
-    "version.py": "daa12dd2c0719c5b9a4f3472c64d738ca9f9bb7cc96d18c2c8d93378b63a3618",
-    "emojis_datos.py": "bcaade2fd80c117aa69f7387cf7807c5e9639ef30d8ee335f080d7a43701fb34"
+    "version.py": "35a590a261d26f23039b8e01f8beb3494a578484ffd05d49d069c9c5b9fad851",
+    "emojis_datos.py": "bcaade2fd80c117aa69f7387cf7807c5e9639ef30d8ee335f080d7a43701fb34",
+    "ingles_datos.py": "a64fd6b3ea7185d525391f149a5b129eec40e13b05884fe714415b5bf395ecba",
+    "nombres_datos.py": "46d46037cb3e85dff5841bc6983e11f7da5fa705d2e24382e36da2b1b1a4498b"
   },
   "min_programa": "1.0",
   "historial": [
+    {
+      "version": "1.3",
+      "cambios": [
+        "Los nombres propios se escriben con may\u00fascula: juan -> Juan, bogota -> Bogot\u00e1, whatsapp -> WhatsApp (aprende tambi\u00e9n los tuyos)",
+        "Ingl\u00e9s: no corrige al espa\u00f1ol las palabras en ingl\u00e9s, sugiere y corrige en ingl\u00e9s, i -> I, y en frases inglesas no aplica las reglas del espa\u00f1ol"
+      ]
+    },
     {
       "version": "1.2",
       "cambios": [
