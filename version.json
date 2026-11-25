@@ -1,21 +1,27 @@
 {
-  "version": "1.5",
-  "commit": "ad6f9701d71fd217627367bde970107987602b86",
+  "version": "1.6",
+  "commit": "70efc41c24cd1553dbcf049cc55c10f586f12c1f",
   "archivos": {
-    "teclado.py": "3ac4901ddadaa27088e0025771ff9ad419adaef6413d228fd22ba35b47f1c70a",
+    "teclado.py": "48ee7cff32715b3d35b1c09ca713b71b3b238119bde6e03af01256a5fdba63b6",
     "motor.py": "71415a731c71b6c34895c78011038104bdf0a4b3f00df2b003304372cbf60d8e",
-    "controlador.py": "e3a34586cd788b84ef12d5053d21ad50ebbf0abaa2be58f9dcaea305433f3472",
+    "controlador.py": "d06c894102ab4f2a486553a3a3528011cf308228eaa331ffe80407296be622e9",
     "gramatica.py": "3e02b367d07b843d37ce53efe082f05e4ee18509c089693afa70e025100dc4ff",
     "uia.py": "51dbe875092d2a26a73d420aa4d9076569d13add18e5d936890bf18fa5974bbe",
     "ortografia_windows.py": "e739a70e910cfbfc0d02dfbd37b32511da9b3fe175304466da4299a6b6639acc",
     "actualizador.py": "eadf148e043502a22cda161113f3f164e6035b54abfdc3d4c3dc1245471511a3",
-    "version.py": "2d0cbeb223a5728bb79dcc69d48159c16aedc4f7fe37021b62413f02426bfc26",
+    "version.py": "286f7f00e3321f3023a718bd7c846ae64e9abf01a97694f8ddb8fda958bff308",
     "emojis_datos.py": "bcaade2fd80c117aa69f7387cf7807c5e9639ef30d8ee335f080d7a43701fb34",
     "ingles_datos.py": "a64fd6b3ea7185d525391f149a5b129eec40e13b05884fe714415b5bf395ecba",
     "nombres_datos.py": "46d46037cb3e85dff5841bc6983e11f7da5fa705d2e24382e36da2b1b1a4498b"
   },
   "min_programa": "1.0",
   "historial": [
+    {
+      "version": "1.6",
+      "cambios": [
+        "Al pulsar Enter con una palabra a medias o mal escrita, se completa o corrige antes de enviar el mensaje"
+      ]
+    },
     {
       "version": "1.5",
       "cambios": [
