@@ -139,6 +139,10 @@ class Salida:
 
 
 # ---------------- utilidades de Windows ----------------
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wt.UINT), ("dwTime", wt.DWORD)]
+
+
 class GUITHREADINFO(ctypes.Structure):
     _fields_ = [("cbSize", wt.DWORD), ("flags", wt.DWORD), ("hwndActive", wt.HWND),
                 ("hwndFocus", wt.HWND), ("hwndCapture", wt.HWND), ("hwndMenuOwner", wt.HWND),
@@ -627,11 +631,42 @@ class App:
             self.ultimo_clic = (x, y)
             self.ctl.reiniciar()
 
-    def iniciar(self):
+    def on_move(self, x, y):
+        self.ultimo_raton = time.time()
+
+    def _enganchar(self):
+        """(Re)conecta los ganchos de teclado y ratón con Windows."""
+        for viejo in (getattr(self, "oyente", None), getattr(self, "raton", None)):
+            if viejo:
+                try:
+                    viejo.stop()
+                except Exception:
+                    pass
+        self.ultima_tecla = self.ultimo_raton = time.time()
         self.oyente = keyboard.Listener(on_press=self.on_press, win32_event_filter=self.filtro)
         self.oyente.start()
-        self.raton = mouse.Listener(on_click=self.on_click)
+        self.raton = mouse.Listener(on_click=self.on_click, on_move=self.on_move)
         self.raton.start()
+
+    def vigilar_gancho(self):
+        """Windows quita el gancho sin avisar si alguna vez tarda en responder.
+        Si hubo teclas o ratón y no nos llegó nada, volver a engancharse."""
+        try:
+            li = LASTINPUTINFO(cbSize=ctypes.sizeof(LASTINPUTINFO))
+            if user32.GetLastInputInfo(ctypes.byref(li)):
+                hace = ((kernel32.GetTickCount() - li.dwTime) & 0xFFFFFFFF) / 1000
+                ahora = time.time()
+                visto = max(self.ultima_tecla, getattr(self, "ultimo_raton", 0))
+                if hace < 1.5 and ahora - visto > 3 + hace:
+                    self.ctl.reiniciar()
+                    self._enganchar()
+        except Exception:
+            pass
+        self.root.after(1000, self.vigilar_gancho)
+
+    def iniciar(self):
+        self._enganchar()
+        self.root.after(5000, self.vigilar_gancho)
         self.root.after(300, self.aviso, "⌨ Teclado Inteligente activo")
         if getattr(sys, "frozen", False):           # solo el programa instalado se actualiza
             try:
