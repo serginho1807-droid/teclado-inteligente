@@ -175,6 +175,27 @@ def pulsada(vk):
     return bool(user32.GetAsyncKeyState(vk) & 0x8000)
 
 
+user32.GetKeyboardLayout.restype = ctypes.c_void_p
+user32.ToUnicodeEx.argtypes = [wt.UINT, wt.UINT, ctypes.c_void_p, wt.LPWSTR, ctypes.c_int,
+                               wt.UINT, ctypes.c_void_p]
+
+
+def traducir_tecla(vk, scan, hwnd):
+    """Qué carácter escribe esta tecla con la distribución de teclado de esa ventana
+    (latinoamericana, española...). Usa ToUnicodeEx con el indicador 4, que no
+    toca el estado del teclado, así las tildes (teclas muertas) siguen funcionando."""
+    hkl = user32.GetKeyboardLayout(user32.GetWindowThreadProcessId(hwnd, None))
+    estado = (ctypes.c_ubyte * 256)()
+    for v in (0x10, 0xA0, 0xA1, 0x11, 0xA2, 0xA3, 0x12, 0xA4, 0xA5):
+        if pulsada(v):
+            estado[v] = 0x80
+    if user32.GetKeyState(0x14) & 1:                  # Bloq Mayús
+        estado[0x14] = 0x01
+    buf = ctypes.create_unicode_buffer(8)
+    n = user32.ToUnicodeEx(vk, scan, estado, buf, 8, 4, hkl)
+    return buf.value[:n] if n > 0 else None
+
+
 ACENTOS = {"´": "́", "`": "̀", "¨": "̈", "^": "̂", "~": "̃"}
 
 
@@ -484,6 +505,7 @@ class App:
         vk = data.vkCode
         ctrl, alt, shift = pulsada(VK_CONTROL), pulsada(VK_MENU), pulsada(VK_SHIFT)
         self.evento_muerto = False
+        self.caracter = None
         if ctrl and shift and vk == 0x7A:        # Ctrl+Shift+F11
             self.ctl.pausado = not self.ctl.pausado
             self.ctl.reiniciar()
@@ -528,6 +550,10 @@ class App:
             elif indice == len(self.ctl.visibles) and self.ctl.emoji:
                 self.ctl.elegir_emoji()                # la tecla de después: el emoji
                 self.oyente.suppress_event()
+        try:
+            self.caracter = traducir_tecla(vk, data.scanCode, hwnd)
+        except Exception:
+            self.caracter = None
         car = user32.MapVirtualKeyW(vk, 2)
         if car & 0x80000000:                     # tecla de tilde (muerta)
             base = chr(car & 0xFFFF)
@@ -566,7 +592,9 @@ class App:
             else:                                # flechas, Tab, Inicio, Esc...
                 self.ctl.reiniciar()
             return
-        ch = getattr(key, "char", None)
+        # el carácter según Windows y tu distribución de teclado ("?" en la
+        # latinoamericana es Mayús + tecla 0xDB); pynput solo de reserva
+        ch = getattr(self, "caracter", None) or getattr(key, "char", None)
         acento, self.acento = self.acento, None
         if ch is None or ord(ch[0]) < 32 or (ctrl and not alt):
             self.ctl.reiniciar()                 # atajos tipo Ctrl+C
