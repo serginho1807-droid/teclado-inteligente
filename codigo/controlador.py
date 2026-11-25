@@ -151,6 +151,31 @@ class Controlador:
         (lo que escribiste primero) en la barra. Siempre False: borra normal."""
         return False
 
+    def antes_de_enter(self):
+        """Enter con una palabra a medias o mal escrita ("vamos a hac"): la
+        completa/corrige antes de que salga el mensaje. True si cambió algo
+        (entonces el programa se come ese Enter y lo pulsa después)."""
+        with self.lock:
+            if not self.cfg["autocorregir"]:
+                return False
+            a, b, sucia = self._tramo()
+            w = self.texto[a:self.cur]
+            if (sucia or not w or b != self.cur
+                    or len(w) < self.cfg["min_letras_autocorregir"]
+                    or w.lower() in self.rechazadas):
+                return False
+            if (w[:1].isupper() and w[1:].islower() and not self._inicio_frase(a)
+                    and self._palabra_antes(a)[0] and not self.m.conocida(w.lower())):
+                return False                       # un nombre
+            corr = self.m.reemplazo(w, self._anterior(a))
+            if not corr:
+                return False
+            final = aplicar_mayus(w, corr)
+            self.salida.reemplazar(len(w), final)
+            self.texto = self.texto[:a] + final + self.texto[self.cur:]
+            self.cur = a + len(final)
+        return True
+
     # ---------- eventos ----------
     def _inicio_frase(self, pos):
         """¿Empieza aquí una frase? (tras punto y espacio, al principio del
