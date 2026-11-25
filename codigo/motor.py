@@ -93,6 +93,30 @@ DIGITO_CERCA = {"1": "qa", "2": "wqs", "3": "ewd", "4": "rea", "5": "tr", "6": "
 PALABRA_RE =re.compile(r"[^\W\d_]+", re.UNICODE)
 
 
+_EMOJIS = None
+
+
+def _cargar_emojis():
+    """El diccionario de emojis está en emojis_datos.py, al lado de este archivo
+    (también cuando llega con una actualización automática)."""
+    global _EMOJIS
+    if _EMOJIS is None:
+        try:
+            from emojis_datos import EMOJIS
+            _EMOJIS = EMOJIS
+        except ImportError:
+            import importlib.util
+            ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "emojis_datos.py")
+            try:
+                spec = importlib.util.spec_from_file_location("emojis_datos", ruta)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                _EMOJIS = mod.EMOJIS
+            except Exception:
+                _EMOJIS = {}
+    return _EMOJIS
+
+
 def sin_tildes(s):
     return "".join(c for c in unicodedata.normalize("NFD", s)
                    if unicodedata.category(c) != "Mn")
@@ -154,6 +178,7 @@ class Motor:
         self.usuario = {}      # palabra -> veces usada
         self.bigramas = {}     # palabra anterior -> {siguiente: veces}
         self.trigramas = {}    # "dos anteriores" -> {siguiente: veces}
+        self.emojis_usuario = {}  # palabra -> {emoji: veces que lo elegiste}
         self.protegidas = set()  # palabras que el usuario no quiere que se corrijan
         self.cambios = False
         self.cargar()
@@ -166,6 +191,7 @@ class Motor:
             self.usuario = d.get("palabras", {})
             self.bigramas = d.get("bigramas", {})
             self.trigramas = d.get("trigramas", {})
+            self.emojis_usuario = d.get("emojis", {})
             self.protegidas = set(d.get("protegidas", []))
         except (OSError, ValueError):
             pass
@@ -177,7 +203,8 @@ class Motor:
         tmp = self.ruta + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"palabras": self.usuario, "bigramas": self.bigramas,
-                       "trigramas": self.trigramas, "protegidas": sorted(self.protegidas)}, f, ensure_ascii=False)
+                       "trigramas": self.trigramas, "emojis": self.emojis_usuario,
+                       "protegidas": sorted(self.protegidas)}, f, ensure_ascii=False)
         os.replace(tmp, self.ruta)
         self.cambios = False
 
@@ -522,6 +549,32 @@ class Motor:
         bueno = self.bigramas.setdefault(nuevo.lower(), {})
         bueno[s] = bueno.get(s, 0) + 1
         self.usuario[nuevo.lower()] = self.usuario.get(nuevo.lower(), 0) + 1
+        self.cambios = True
+
+    # ---------- emojis (como el iPhone: el emoji al lado de la palabra) ----------
+    def emoji_para(self, palabra):
+        """Emoji para esta palabra, o None. Primero el que tú sueles usar con ella."""
+        if not palabra or len(palabra) < 2:
+            return None
+        w = palabra.lower()
+        tuyos = self.emojis_usuario.get(w)
+        if tuyos:
+            return max(tuyos, key=tuyos.get)
+        EMOJIS = _cargar_emojis()
+        if not EMOJIS:
+            return None
+        clave = unicodedata.normalize("NFC", "".join(
+            c for c in unicodedata.normalize("NFD", w)
+            if unicodedata.category(c) != "Mn" or c == "̃"))
+        for k in (clave, clave[:-1] if clave.endswith("s") else None,
+                  clave[:-2] if clave.endswith("es") else None):
+            if k and k in EMOJIS and EMOJIS[k]:
+                return EMOJIS[k][0]
+        return None
+
+    def aprender_emoji(self, palabra, emoji):
+        d = self.emojis_usuario.setdefault(palabra.lower(), {})
+        d[emoji] = d.get(emoji, 0) + 1
         self.cambios = True
 
     def veces_siguiente(self, anterior, palabra):
