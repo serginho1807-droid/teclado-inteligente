@@ -36,6 +36,20 @@ CIERRES = set(".?!,;:…)\"»")
 PREPOSICIONES = {"a", "para", "de", "en", "por", "sin", "sobre", "contra", "hacia", "según",
                  "segun", "entre", "ante", "tras", "desde", "hasta", "con"}
 FIN = object()                                     # marca: aquí se acaba la frase
+ANTES_DE_AHI = {"por", "de", "está", "esta", "estás", "estas", "están", "estan", "estoy",
+                "estaba", "ponlo", "ponla", "déjalo", "dejalo", "déjala", "dejala", "allí",
+                "quédate", "quedate", "hasta", "desde"}
+FORMAS_IR = {"voy", "vas", "va", "vamos", "van", "iba", "ibas", "íbamos", "ibamos", "iban",
+             "fui", "fue", "fuimos", "fueron", "ir", "vete", "ve"}
+FORMAS_HABER = {"he", "has", "ha", "hemos", "han", "había", "habia", "habías", "habias",
+                "habíamos", "habiamos", "habían", "habian", "haber", "habría", "habria",
+                "hubiera", "hubiese", "haya", "hayas", "hayan", "hayamos", "habiendo"}
+ANTES_DE_HABER = {"de", "puede", "pueden", "debe", "deben", "debería", "deberia", "podría",
+                  "podria", "tiene", "tienen", "que", "para", "sin", "por", "va", "a"}
+ANTES_DE_VAYA = {"que", "se", "me", "te", "le", "les", "nos", "no", "ojalá", "ojala",
+                 "cuando", "donde"}
+ANTES_DE_VEZ = {"otra", "tal", "una", "cada", "la", "esta", "esa", "primera", "última",
+                "ultima", "alguna", "ninguna", "segunda", "única", "unica", "toda"}
 
 
 class Gramatica:
@@ -93,6 +107,9 @@ class Gramatica:
                 return False
             return True
 
+        # primero las palabras que suenan igual ("que ay" -> "que hay"), así la
+        # tilde de la anterior se decide con la palabra ya corregida
+        dobles = self._homofonos(toks, siguiente, cambios)
         # de derecha a izquierda: así "Tu estas loco" decide primero "estás"
         for i in range(len(toks) - 1, -1, -1):
             t = toks[i]
@@ -108,6 +125,8 @@ class Gramatica:
                     continue
                 fin = sig is FIN
                 ya_verbo = not fin and (i + 1) in verbo
+                if not fin and cambios.get(i + 1) in ("ahí", "a ver"):
+                    fin = True                      # "esta hay" -> "está ahí": lo que sigue no es sustantivo
                 # tras un determinante no puede ir otro artículo, posesivo o
                 # demostrativo ("esta mi casa" no existe: es "está mi casa")
                 otro_det = (not fin and sig.pos_ == "DET" and (
@@ -163,7 +182,7 @@ class Gramatica:
             elif w == "mas" and sig is not None:
                 cambios[i] = "más"
 
-        res = []
+        res = dobles
         for i, nueva in cambios.items():
             t = toks[i]
             if t.text[0].isupper():
@@ -171,3 +190,82 @@ class Gramatica:
             if nueva != t.text:
                 res.append((t.idx, t.idx + len(t.text), nueva))
         return sorted(res)
+
+    # ---------- palabras que suenan igual (homófonos) ----------
+    def _homofonos(self, toks, siguiente, cambios):
+        """Reglas del Diccionario panhispánico de dudas para las confusiones más
+        comunes. Escribe en `cambios` (índice -> palabra) y devuelve los cambios
+        que ocupan dos palabras ("a ver" -> "haber") como (inicio, fin, texto)."""
+        dobles = []
+
+        def part(t):
+            if t is None or t is FIN:
+                return False
+            if "Part" in t.morph.get("VerbForm"):
+                return True
+            # el analizador a veces no lo marca: participios por su terminación
+            return (len(t.text) > 4 and t.text.lower().endswith(("ado", "ido", "ada", "ida"))
+                    and t.text.islower() and t.pos_ not in ("ADP", "DET", "PRON", "CCONJ"))
+
+        def inf(t):
+            return t is not None and t is not FIN and "Inf" in t.morph.get("VerbForm")
+
+        for i, t in enumerate(toks):
+            if i in cambios:
+                continue
+            w = t.text.lower()
+            sig = siguiente(i)
+            prev = toks[i - 1].text.lower() if i > 0 else None
+            inicio = prev is None or toks[i - 1].is_punct
+            sw = sig.text.lower() if sig not in (None, FIN) else None
+
+            if w == "ay" and sig is not None and sig is not FIN:
+                # "¡Ay, qué dolor!" (queja) / "que hay en la mesa" (existir)
+                queja = inicio and (sw in ("no", "dios", "mi", "caramba", "perdón", "perdon")
+                                    or sw in ("que", "qué") and not inf(siguiente(i + 1)))
+                if not queja:
+                    cambios[i] = "hay"
+            elif w == "hay" and prev is not None:
+                # "está hay", "por hay" -> "ahí" (lugar)
+                if prev in ANTES_DE_AHI or (sig is FIN and toks[i - 1].pos_ in ("VERB", "AUX")
+                                            and prev not in ("no", "sí", "si", "ya")):
+                    cambios[i] = "ahí"
+            elif w == "haber" and sig is not None:
+                # "vamos haber" / "haber si viene" -> "a ver"
+                if (prev in FORMAS_IR and not part(sig)) or (
+                        sw in ("si", "qué", "que", "cómo", "como", "cuándo", "cuando", "dónde",
+                               "donde", "quién", "quien", "cuánto", "cuanto")
+                        and prev not in ANTES_DE_HABER):
+                    cambios[i] = "a ver"
+            elif w == "a" and sw == "ver" and part(siguiente(i + 1)):
+                # "debe a ver sido" -> "debe haber sido"
+                v = toks[i + 1]
+                nuevo = "Haber" if t.text[0].isupper() else "haber"
+                dobles.append((t.idx, v.idx + len(v.text), nuevo))
+                cambios[i + 1] = v.text            # marcar como tratado
+            elif w == "echo" and (prev in FORMAS_HABER or prev == "de"):
+                cambios[i] = "hecho"               # "he echo" -> "he hecho", "de hecho"
+            elif w == "hecho" and prev in CLITICOS and sw == "de":
+                cambios[i] = "echo"                # "te hecho de menos" -> "te echo de menos"
+            elif w == "valla" and (inicio or prev in ANTES_DE_VAYA):
+                cambios[i] = "vaya"                # "que te valla bien" -> "vaya"
+            elif w == "vaya" and prev in ("una", "esa", "esta", "otra", "aquella"):
+                cambios[i] = "valla"               # "la vaya del jardín" -> "valla"
+            elif w == "tubo" and (sw == "que" or prev in ("él", "ella", "usted", "no",
+                                                         "se", "lo", "le", "ya", "nunca")):
+                cambios[i] = "tuvo"                # "tubo que irse" -> "tuvo que"
+            elif w in ("halla", "aya", "alla") and part(sig):
+                cambios[i] = "haya"                # "que halla venido" -> "haya"
+            elif w == "a" and part(sig) and prev is not None and (
+                    toks[i - 1].pos_ in ("NOUN", "PROPN", "PRON")
+                    or prev in ("ya", "no", "se", "me", "te", "le", "lo", "la", "nunca")):
+                cambios[i] = "ha"                  # "ella a comido" -> "ha comido"
+            elif w == "ha" and (inf(sig) or prev in FORMAS_IR):
+                cambios[i] = "a"                   # "voy ha comer" -> "a comer"
+            elif w == "has" and sw in ("lo", "la", "los", "las", "me", "nos", "le", "les"):
+                cambios[i] = "haz"                 # "has lo que quieras" -> "haz"
+            elif w == "haz" and part(sig):
+                cambios[i] = "has"                 # "haz hecho" -> "has hecho"
+            elif w == "ves" and prev in ANTES_DE_VEZ:
+                cambios[i] = "vez"                 # "otra ves" -> "otra vez"
+        return dobles
