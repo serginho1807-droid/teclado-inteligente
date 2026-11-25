@@ -431,6 +431,14 @@ class Motor:
         arreglo = self.arreglo_p(w)               # la p junto a la tilde: "intentpe"
         if arreglo:
             return arreglo
+        # anglicismos de uso diario ("reels", "streamer", "gamer") y plurales de
+        # palabras que existen ("tiktoks"): no "corregirlos" a otra cosa
+        if self.frec_ingles(w) >= 500:
+            return None
+        if (len(w) >= 5 and w.endswith("s") and w[-2] not in "aeiouáéíóús"
+                and (self.frec_ingles(w[:-1]) >= 500
+                     or self.frec.get(w[:-1], 0) >= self.min_frec)):
+            return None                           # plural a la inglesa: "tiktok" + s
         separada = self.separar(w, anterior)
         if separada:
             comp = self.completar(w, anterior, 1) if self.completar_con_espacio else []
