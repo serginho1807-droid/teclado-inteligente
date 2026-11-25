@@ -1,5 +1,5 @@
 ﻿# Versión del código del teclado. Súbela en cada mejora (publicar.py lo hace).
-CODIGO = "1.8"
+CODIGO = "1.9"
 # Versión de las librerías que lleva el .exe (spaCy, wordfreq...). Solo cambia
 # cuando hay que repartir un instalador completo nuevo.
 PROGRAMA = "1.0"
