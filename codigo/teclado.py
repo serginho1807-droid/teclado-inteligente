@@ -42,6 +42,7 @@ CONFIG_BASE = {
     "autocorregir": True,
     "completar_con_espacio": True,
     "teclas_F": True,
+    "emojis": True,               # emoji al lado de las palabras (como el iPhone)
     "posicion_barra": None,
     "opacidad": 0.6,           # 1 = sólida, 0.4 = muy transparente
     "mayuscula_inicial": True,
@@ -242,6 +243,19 @@ class App:
             lab.bind("<Enter>", lambda e, l=lab: l.configure(bg="#5865f2"))
             lab.bind("<Leave>", lambda e, l=lab: l.configure(bg="#2b2d31"))
             self.etiquetas.append((f, lab))
+        # el hueco del emoji, a la derecha de las palabras (como el iPhone)
+        fe = tk.Frame(b, bg="#2b2d31")
+        self.num_emoji = tk.Label(fe, text="", fg="#8e9297", bg="#2b2d31", font=("Segoe UI", 7))
+        self.num_emoji.pack(side="top")
+        self.lab_emoji = tk.Label(fe, text="", fg="white", bg="#2b2d31", padx=8, pady=0,
+                                  font=("Segoe UI Emoji", self.cfg["tamano_letra"] + 2),
+                                  cursor="hand2")
+        self.lab_emoji.pack(side="top")
+        for w in (fe, self.num_emoji, self.lab_emoji):
+            w.bind("<Button-1>", lambda e: self.ctl.elegir_emoji())
+        self.lab_emoji.bind("<Enter>", lambda e: self.lab_emoji.configure(bg="#5865f2"))
+        self.lab_emoji.bind("<Leave>", lambda e: self.lab_emoji.configure(bg="#2b2d31"))
+        self.marco_emoji = fe
         b.withdraw()
         b.update_idletasks()
         # que no robe el foco al programa donde escribes
@@ -288,10 +302,18 @@ class App:
         b = self.barra
         if aviso:
             sugs = [aviso]
-        if not sugs:
+        emoji = None if aviso else getattr(self.ctl, "emoji", None)
+        if not sugs and not emoji:
             b.withdraw()
             self.rect_barra = None
             return
+        if emoji:
+            n = len(sugs) + 1
+            self.num_emoji.configure(text=f"F{n}" if self.cfg["teclas_F"] else f"Ctrl+{n}")
+            self.lab_emoji.configure(text=emoji)
+            self.marco_emoji.pack_forget()
+        else:
+            self.marco_emoji.pack_forget()
         resaltar = not aviso and getattr(self.ctl, "resaltar", False)
         for i, (f, lab) in enumerate(self.etiquetas):
             if i < len(sugs):
@@ -303,6 +325,8 @@ class App:
                 f.pack(side="left", padx=1, pady=1)
             else:
                 f.pack_forget()
+        if emoji:
+            self.marco_emoji.pack(side="left", padx=(1, 6), pady=1)   # siempre el último
         b.update_idletasks()
         w, h = b.winfo_reqwidth(), b.winfo_reqheight()
         area = wt.RECT()
@@ -424,14 +448,18 @@ class App:
             self.oyente.suppress_event()         # espacio tras espacio: tu siguiente palabra
         if vk == VK_BACK and not ctrl and not alt and self.ctl.ver_opciones_correccion():
             self.oyente.suppress_event()         # tras corregir: no borra, da opciones
+        indice = None
         if ctrl and not alt and 0x31 <= vk <= 0x39:   # Ctrl+1..9 (AltGr no)
-            if vk - 0x31 < len(self.ctl.visibles):
-                self.ctl.elegir(vk - 0x31)
-                self.oyente.suppress_event()
+            indice = vk - 0x31
         if (self.cfg["teclas_F"] and not ctrl and not alt and not shift
-                and 0x70 <= vk <= 0x78):               # F1..F9: una sola tecla
-            if vk - 0x70 < len(self.ctl.visibles) and self.rect_barra:
-                self.ctl.elegir(vk - 0x70)
+                and 0x70 <= vk <= 0x78 and self.rect_barra):   # F1..F9: una sola tecla
+            indice = vk - 0x70
+        if indice is not None:
+            if indice < len(self.ctl.visibles):
+                self.ctl.elegir(indice)
+                self.oyente.suppress_event()
+            elif indice == len(self.ctl.visibles) and self.ctl.emoji:
+                self.ctl.elegir_emoji()                # la tecla de después: el emoji
                 self.oyente.suppress_event()
         car = user32.MapVirtualKeyW(vk, 2)
         if car & 0x80000000:                     # tecla de tilde (muerta)
