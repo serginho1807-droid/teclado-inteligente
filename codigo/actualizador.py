@@ -60,12 +60,21 @@ def _bajar(url, limite=5_000_000):
 
 
 class Actualizador:
-    def __init__(self, version_codigo, version_programa, al_actualizar=None, al_avisar=None):
+    """modo (lo elige cada persona en config.json o en la ventana de aviso):
+      "preguntar"   avisa con la lista de cambios y solo descarga si aceptas
+      "automatico"  descarga e instala solo
+      "nunca"       no mira si hay versiones nuevas"""
+
+    def __init__(self, version_codigo, version_programa, al_actualizar=None, al_avisar=None,
+                 al_preguntar=None, modo=lambda: "preguntar"):
         self.base = version_codigo              # versión del código que trae el .exe
         self.programa = version_programa        # versión de las librerías del .exe
         self.al_actualizar = al_actualizar or (lambda v: None)
         self.al_avisar = al_avisar or (lambda texto: None)
+        self.al_preguntar = al_preguntar or (lambda v, cambios, aceptar: None)
+        self.modo = modo
         self.avisado = None
+        self.preguntado = None
 
     def iniciar(self):
         if "{" in REPO:                         # sin repositorio configurado
@@ -82,7 +91,30 @@ class Actualizador:
             time.sleep(CADA)
 
     def revisar(self):
+        if self.modo() == "nunca":
+            return None
         info = json.loads(_bajar(URL_VERSION, 200_000).decode("utf-8"))
+        nueva = info["version"]
+        actual = version_instalada(self.base)
+        if version_tupla(nueva) <= version_tupla(actual):
+            return None
+        if self.modo() != "automatico":
+            # avisar con lo que cambia en las versiones que te faltan; descargar
+            # solo si aceptas (una vez por versión; "más tarde" vuelve a avisar)
+            if self.preguntado != nueva:
+                self.preguntado = nueva
+                cambios = [c for h in info.get("historial", [])
+                           if version_tupla(h.get("version")) > version_tupla(actual)
+                           for c in h.get("cambios", [])]
+                self.al_preguntar(nueva, cambios, lambda: self.instalar(info))
+            return None
+        return self.instalar(info)
+
+    def mas_tarde(self):
+        """"Ahora no": se volverá a avisar en la próxima revisión."""
+        self.preguntado = None
+
+    def instalar(self, info):
         nueva = info["version"]
         actual = version_instalada(self.base)
         if version_tupla(nueva) <= version_tupla(actual):
